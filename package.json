@@ -1,0 +1,20 @@
+{
+  "name": "content-book-by-tee",
+  "version": "1.0.0",
+  "description": "Website for Content Book by Tee: the public site, the enquiry form backend and the studio desk (admin).",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "nodemailer": "^10.2.1"
+  }
+}

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Studio desk: Content Book by Tee</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="/assets/brand/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,300..700,0..100&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/admin/admin.css">
+  <script src="/admin/admin.js" defer></script>
+</head>
+<body class="desk">
+  <main id="signin" class="signin" hidden>
+    <img class="signin__logo" src="/assets/brand/logo.svg" width="382" height="518" alt="Content Book by Tee">
+    <h1 class="signin__title">Studio desk</h1>
+    <form id="signin-form" class="signin__form">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button class="button" type="submit">Sign in</button>
+      <p class="desk-msg" id="signin-msg" role="alert"></p>
+    </form>
+  </main>
+
+  <div id="desk" hidden>
+    <header class="bar">
+      <a class="bar__home" href="/"><img src="/assets/brand/script.svg" width="179" height="27" alt="Content Book: view the site"></a>
+      <nav class="tabs" aria-label="Desk">
+        <button class="tab" type="button" data-tab="enquiries" aria-pressed="true">Enquiries <span class="tab__count" id="new-count"></span></button>
+        <button class="tab" type="button" data-tab="work" aria-pressed="false">Work</button>
+      </nav>
+      <div class="bar__end">
+        <span class="bar__note" id="mail-note"></span>
+        <button class="linkish" type="button" id="signout">Sign out</button>
+      </div>
+    </header>
+
+    <section class="panel" id="panel-enquiries" aria-labelledby="enquiries-title">
+      <h1 class="visually-hidden" id="enquiries-title">Enquiries</h1>
+      <div class="filters" id="filters" role="group" aria-label="Show enquiries by status"></div>
+      <div class="split">
+        <div class="list">
+          <table class="table">
+            <thead><tr><th scope="col">Received</th><th scope="col">Name</th><th scope="col">Brand</th><th scope="col">Help with</th><th scope="col">Status</th></tr></thead>
+            <tbody id="enquiry-rows"></tbody>
+          </table>
+          <p class="empty" id="enquiry-empty" hidden>Nothing here yet. Enquiries from the site's form land here.</p>
+        </div>
+        <article class="detail" id="detail" hidden aria-live="polite"></article>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-work" aria-labelledby="work-title" hidden>
+      <div class="panel__head">
+        <h1 class="panel__title" id="work-title">Work on the site</h1>
+        <button class="button" type="button" id="add-work">Add work</button>
+      </div>
+      <p class="panel__hint">The site shows published work in order of position: the first sits left at 3:2, the second right at 4:5, the third inset at 16:9, then it repeats.</p>
+      <ul class="work-list" id="work-list"></ul>
+    </section>
+  </div>
+
+  <dialog class="sheet" id="work-dialog" aria-labelledby="work-dialog-title">
+    <form id="work-form" class="sheet__form">
+      <h2 id="work-dialog-title">Add work</h2>
+      <label>Title <input name="title" required maxlength="120"></label>
+      <label>One line about it <textarea name="summary" rows="3" maxlength="400"></textarea></label>
+      <div class="sheet__pair">
+        <label>Result <input name="metric" maxlength="40" placeholder="8,466 plays"></label>
+        <label>Position <input name="position" type="number" min="0" step="1"></label>
+      </div>
+      <label>Link to the reel or post <input name="link" type="url" maxlength="400" placeholder="https://www.instagram.com/reel/…"></label>
+      <div class="sheet__image">
+        <label>Image <input name="image" required maxlength="400" placeholder="/uploads/… or https://…"></label>
+        <label class="upload">Upload an image<input type="file" id="upload" accept="image/jpeg,image/png,image/webp"></label>
+        <img id="image-preview" alt="" hidden>
+      </div>
+      <label>Video file path (optional) <input name="video" maxlength="400" placeholder="/assets/media/….mp4"></label>
+      <label>Describe the image for screen readers <input name="alt" maxlength="200"></label>
+      <label class="check"><input type="checkbox" name="published" checked> Show it on the site</label>
+      <p class="desk-msg" id="work-msg" role="alert"></p>
+      <div class="sheet__actions">
+        <button class="button" type="submit">Save</button>
+        <button class="linkish" type="button" id="work-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
