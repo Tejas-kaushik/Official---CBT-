@@ -1,77 +1,10 @@
 // Content Book by Tee: the page's behaviour. Everything here is an enhancement:
-// without it the stills show, every section is visible and the form still posts.
+// without it every section is visible and the form still posts.
 
 const root = document.documentElement;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const wide = matchMedia('(min-width: 861px)');
 root.classList.add('js');
 requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add('is-ready')));
-
-// ---------- the reel panel ----------
-
-const scenes = new Map([...document.querySelectorAll('.scene')].map(s => [s.dataset.scene, s]));
-const workScene = scenes.get('work');
-let current = 'matcha';
-
-function play(video) {
-  if (reduceMotion || !video) return;
-  if (!video.src && video.dataset.src) video.src = video.dataset.src;
-  if (video.src) video.play().catch(() => {});
-}
-
-function show(name) {
-  if (!scenes.has(name)) return;
-  if (name === current) return play(scenes.get(name).querySelector('video'));
-  scenes.get(current)?.classList.remove('is-active');
-  scenes.get(current)?.querySelector('video')?.pause();
-  current = name;
-  scenes.get(name).classList.add('is-active');
-  play(scenes.get(name).querySelector('video'));
-}
-
-// The work scene shows whichever project in the ledger is active.
-function showJob(job) {
-  document.querySelectorAll('.job.is-active').forEach(j => j.classList.remove('is-active'));
-  job.classList.add('is-active');
-  const still = workScene.querySelector('.scene__still');
-  const video = workScene.querySelector('video');
-  still.src = job.dataset.image;
-  workScene.querySelector('figcaption').textContent = job.dataset.caption;
-  video.pause();
-  video.removeAttribute('src');
-  video.hidden = !job.dataset.video;
-  if (job.dataset.video) {
-    video.dataset.src = job.dataset.video;
-    video.poster = job.dataset.image;
-    if (current === 'work') play(video);
-  }
-  still.onload = () => workScene.classList.toggle('is-landscape', still.naturalWidth > still.naturalHeight);
-}
-
-const jobs = [...document.querySelectorAll('.job')];
-if (jobs.length) showJob(jobs[0]);
-jobs.forEach(job => {
-  const activate = () => { if (wide.matches) { showJob(job); show('work'); } };
-  job.addEventListener('mouseenter', activate);
-  job.addEventListener('focus', activate);
-});
-
-// Whichever section crosses the middle of the screen picks the scene.
-if ('IntersectionObserver' in window) {
-  const sections = new IntersectionObserver(entries => {
-    for (const { target, isIntersecting } of entries) if (isIntersecting && wide.matches) show(target.dataset.scene);
-  }, { rootMargin: '-45% 0px -45% 0px' });
-  document.querySelectorAll('.stage__read > section[data-scene]').forEach(s => sections.observe(s));
-
-  // Only play while the panel is on screen (it scrolls away on phones).
-  const panel = new IntersectionObserver(([entry]) => {
-    const video = scenes.get(current).querySelector('video');
-    if (entry.isIntersecting) play(video); else video?.pause();
-  });
-  panel.observe(document.querySelector('.stage__media'));
-} else {
-  play(scenes.get('matcha').querySelector('video'));
-}
 
 // ---------- entrances ----------
 

@@ -8,15 +8,11 @@ export const escapeHtml = s =>
 // Only our own paths or https links reach an href or src.
 const safeUrl = u => (/^(\/(?!\/)|https:\/\/)/.test(u) ? u : '');
 
-// One row of the work ledger. On wide screens, focusing or hovering a row shows its clip in the
-// fixed panel (main.js reads data-image / data-video); on phones the still shows inline.
+// One row of the work ledger: name, result, a line about it and a link to the reel.
 function job(w) {
-  const image = escapeHtml(safeUrl(w.image));
-  const video = escapeHtml(safeUrl(w.video));
   const link = safeUrl(w.link);
   const title = escapeHtml(w.title);
-  return `<li class="job" tabindex="0" data-image="${image}" data-video="${video}" data-caption="${title}">
-            <img class="job__still" src="${image}" alt="${escapeHtml(w.alt)}" loading="lazy">
+  return `<li class="job">
             <h3 class="job__name">${title}</h3>
             <p class="job__metric">${escapeHtml(w.metric)}</p>
             <p class="job__text">${escapeHtml(w.summary)}${link ? ` <a class="textlink" href="${escapeHtml(link)}" target="_blank" rel="noopener">Watch<span class="visually-hidden"> ${title}</span> on Instagram</a>` : ''}</p>

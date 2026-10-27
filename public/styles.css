@@ -123,31 +123,24 @@ strong { font-weight: 600; }
 
 /* ---------- the stage: fixed reels left, reading column right ---------- */
 .stage { display: grid; grid-template-columns: 45fr 55fr; align-items: start; }
-.stage__media {
+.stage__panel {
   position: sticky;
   top: calc(var(--top) + var(--inset));
   height: calc(100svh - var(--top) - 2 * var(--inset));
   margin: var(--inset) 0 var(--inset) var(--inset);
-  background: var(--ink);
-  overflow: hidden;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  background: var(--paper-solid);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  justify-items: center;
 }
-.scene { position: absolute; inset: 0; opacity: 0; transition: opacity 700ms var(--ease-out); }
-.scene.is-active { opacity: 1; }
-.scene video, .scene .scene__still { width: 100%; height: 100%; object-fit: cover; }
-.scene--work video { position: absolute; inset: 0; }
-/* A landscape clip sits on the paper like a print, rather than in black bars. */
-.scene--work.is-landscape { background: var(--paper-solid); }
-.scene--work.is-landscape video, .scene--work.is-landscape .scene__still { object-fit: contain; padding: 0 clamp(1rem, 3vw, 2.5rem); }
-.scene--mark { background: var(--paper-solid); display: grid; place-items: center; }
-.scene--mark img { width: min(62%, 24rem); height: auto; }
-.scene figcaption {
-  position: absolute; left: 0; bottom: 0;
-  padding: 0.55rem 0.9rem;
-  background: var(--ink); color: var(--accent-ink);
-  font-size: var(--step-small);
-}
-.scene--mark figcaption { background: transparent; color: var(--ink-soft); }
-.scene figcaption:empty { display: none; }
+.panel__mark { display: grid; justify-items: center; gap: 0.9rem; width: min(78%, 26rem); }
+.panel__drawing { width: 78%; height: auto; }
+.panel__script { width: 100%; height: auto; fill: var(--ink); margin-top: 1rem; }
+.panel__bytee { width: 36%; height: auto; fill: var(--ink); }
+.panel__line { justify-self: start; align-self: end; font-size: var(--step-lead); font-weight: 300; letter-spacing: -0.01em; }
+.panel__place { justify-self: start; font-size: var(--step-small); color: var(--ink-soft); }
 
 .stage__read { padding: 0 clamp(1.5rem, 5vw, 5rem) 0 clamp(1.75rem, 4.5vw, 4.5rem); min-width: 0; }
 .stage__read > section { padding-top: var(--section); }
@@ -185,13 +178,12 @@ strong { font-weight: 600; }
   transition: background-color var(--t-hover);
   outline-offset: 4px;
 }
-.job__still { display: none; }
 .job__name { font-size: var(--step-lead); font-weight: 400; letter-spacing: -0.015em; transition: transform var(--t-hover) var(--ease-out); }
 .job__metric { font-variant-numeric: tabular-nums; color: var(--ink-soft); align-self: baseline; }
 .job__text { grid-column: 1 / -1; margin-top: 0.35rem; max-width: 52ch; font-size: 1rem; }
-.job.is-active { background: var(--paper-step); }
-.job.is-active .job__name, .job:hover .job__name { transform: translateX(6px); }
-.job.is-active .job__metric { color: var(--ink); font-weight: 500; }
+.job:hover, .job:focus-within { background: var(--paper-step); }
+.job:hover .job__name, .job:focus-within .job__name { transform: translateX(6px); }
+.job:hover .job__metric, .job:focus-within .job__metric { color: var(--ink); font-weight: 500; }
 .work__more { margin-top: 2rem; color: var(--ink-soft); max-width: 52ch; font-size: 1rem; }
 
 /* process: the slip */
@@ -345,18 +337,12 @@ strong { font-weight: 600; }
   .brand__script { width: 7rem; }
 
   .stage { display: block; }
-  .stage__media { position: relative; top: 0; height: 56svh; margin: 0.75rem; }
-  .scene:not([data-scene="matcha"]) { display: none; }
-  .scene[data-scene="matcha"] { opacity: 1; }
+  .stage__panel { display: none; } /* the header already carries the logo on a phone */
   .stage__read { padding: 0 var(--m); }
-  .scene figcaption { display: none; }
   .stage__read > .intro { min-height: 0; padding: 2.5rem 0 1rem; }
 
   .figures__title { margin-left: 0; }
   .figures__list > div { grid-template-columns: 5.5rem 1fr; column-gap: 1rem; }
-
-  .job__still { display: block; grid-column: 1 / -1; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; margin-bottom: 0.9rem; background: var(--ink); }
-  .job.is-active .job__name, .job:hover .job__name { transform: none; }
 
   .slip { padding: 1.5rem 1.25rem 2.5rem; }
   .slip__row { display: grid; gap: 0.1rem; }
@@ -381,10 +367,5 @@ strong { font-weight: 600; }
   .js .is-in[data-reveal],
   .js .is-in[data-reveal-group] > * { opacity: 1; transform: none; }
 
-  /* The panel's clip settles from a slight zoom whenever its scene comes in. */
-  .scene video, .scene .scene__still { transform: scale(1.06); transition: transform 1600ms var(--ease-out); }
-  .scene.is-active video, .scene.is-active .scene__still { transform: none; }
-
-  .js .top { transform: translateY(-100%); transition: transform 700ms var(--ease-out); }
   .js.is-ready .top { transform: none; }
 }
