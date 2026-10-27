@@ -50,12 +50,12 @@ for (const [kind, makeStore] of Object.entries(stores)) {
       return res.headers.get('set-cookie').split(';')[0];
     }
 
-    test('the home page renders the seeded work and the form', async () => {
+    test('the home page renders the services and the form', async () => {
       const res = await fetch(base);
       assert.equal(res.status, 200);
       const html = await res.text();
-      assert.match(html, /Chalo Baithak/);
-      assert.match(html, /8,466 plays/);
+      assert.match(html, /What we offer/);
+      assert.doesNotMatch(html, /Chalo Baithak|plays/);
       assert.match(html, /<option value="website">A café website<\/option>/);
       assert.match(html, /<symbol id="wm-content"/);
       assert.match(res.headers.get('content-security-policy'), /script-src 'self'/);
@@ -90,7 +90,7 @@ for (const [kind, makeStore] of Object.entries(stores)) {
         body: new URLSearchParams({ ...enquiry, brand: 'No Script Café' }),
       });
       assert.equal(res.status, 303);
-      assert.equal(res.headers.get('location'), '/?sent=1#write');
+      assert.equal(res.headers.get('location'), '/?sent=1#contact');
     });
 
     test('a bot filling the hidden field gets a thank-you but nothing is stored', async () => {
@@ -168,10 +168,8 @@ for (const [kind, makeStore] of Object.entries(stores)) {
       assert.equal(fake.status, 400);
     });
 
-    test('work titles are escaped on the page', async () => {
-      const cookie = await signIn();
-      await fetch(`${base}/api/desk/work`, json('POST', { title: '<script>alert(1)</script>', image: '/x.jpg' }, cookie));
-      const html = await (await fetch(base)).text();
+    test('error messages are escaped on the page', async () => {
+      const html = await (await fetch(`${base}/?error=${encodeURIComponent('<script>alert(1)</script>')}`)).text();
       assert.ok(!html.includes('<script>alert(1)</script>'));
       assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
     });

@@ -101,7 +101,7 @@ export function createApp({ store, config, notifier }) {
 
   app.get('/', async (req, res) => {
     res.set('Cache-Control', 'no-cache');
-    res.type('html').send(renderHome({ work: await store.work.published(), query: req.query }));
+    res.type('html').send(renderHome({ query: req.query }));
   });
 
   app.get(['/admin', '/admin/'], (req, res) => {
@@ -126,19 +126,19 @@ export function createApp({ store, config, notifier }) {
       const body = req.body ?? {};
 
       // The hidden "website" field is only ever filled in by bots.
-      if (text(body, 'website')) return wantsJson ? res.status(201).json({ ok: true }) : res.redirect(303, '/?sent=1#write');
+      if (text(body, 'website')) return wantsJson ? res.status(201).json({ ok: true }) : res.redirect(303, '/?sent=1#contact');
 
       const { e, errors } = readEnquiry(body);
       if (Object.keys(errors).length) {
         if (wantsJson) return res.status(400).json({ error: 'Some answers need another look.', fields: errors });
-        return res.redirect(303, `/?error=${encodeURIComponent(Object.values(errors)[0])}#write`);
+        return res.redirect(303, `/?error=${encodeURIComponent(Object.values(errors)[0])}#contact`);
       }
 
       const saved = await store.enquiries.add(e);
       // Awaited so a serverless host does not stop the function before the email is out.
       await notifier.enquiry(saved).catch(err => console.error(`Enquiry #${saved.id} saved, but the email failed:`, err.message));
 
-      if (!wantsJson) return res.redirect(303, '/?sent=1#write');
+      if (!wantsJson) return res.redirect(303, '/?sent=1#contact');
       res.status(201).json({ ok: true, id: saved.id, name: e.name, brand: e.brand, city: e.city, email: e.email, service: SERVICES[e.service] });
     },
   );
