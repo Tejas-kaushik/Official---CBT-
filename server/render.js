@@ -8,24 +8,22 @@ export const escapeHtml = s =>
 // Only our own paths or https links reach an href or src.
 const safeUrl = u => (/^(\/(?!\/)|https:\/\/)/.test(u) ? u : '');
 
-function piece(w) {
-  const image = safeUrl(w.image);
-  const video = safeUrl(w.video);
+// One row of the work ledger. On wide screens, focusing or hovering a row shows its clip in the
+// fixed panel (main.js reads data-image / data-video); on phones the still shows inline.
+function job(w) {
+  const image = escapeHtml(safeUrl(w.image));
+  const video = escapeHtml(safeUrl(w.video));
   const link = safeUrl(w.link);
-  const media = video
-    ? `<video class="piece__media" muted loop playsinline preload="none" poster="${escapeHtml(image)}" data-src="${escapeHtml(video)}" aria-label="${escapeHtml(w.alt)}"></video>`
-    : `<img class="piece__media" src="${escapeHtml(image)}" alt="${escapeHtml(w.alt)}" loading="lazy">`;
-  const framed = link
-    ? `<a class="piece__frame" href="${escapeHtml(link)}" target="_blank" rel="noopener">${media}<span class="visually-hidden"> (watch ${escapeHtml(w.title)} on Instagram)</span></a>`
-    : `<div class="piece__frame">${media}</div>`;
-  return `<article class="piece" data-reveal>
-        <h3 class="piece__name">${escapeHtml(w.title)}</h3>
-        ${framed}
-        <p class="piece__text">${escapeHtml(w.summary)}${w.metric ? ` <span class="piece__metric">${escapeHtml(w.metric)}</span>` : ''}</p>
-      </article>`;
+  const title = escapeHtml(w.title);
+  return `<li class="job" tabindex="0" data-image="${image}" data-video="${video}" data-caption="${title}">
+            <img class="job__still" src="${image}" alt="${escapeHtml(w.alt)}" loading="lazy">
+            <h3 class="job__name">${title}</h3>
+            <p class="job__metric">${escapeHtml(w.metric)}</p>
+            <p class="job__text">${escapeHtml(w.summary)}${link ? ` <a class="textlink" href="${escapeHtml(link)}" target="_blank" rel="noopener">Watch<span class="visually-hidden"> ${title}</span> on Instagram</a>` : ''}</p>
+          </li>`;
 }
 
-const REMARK = `<p class="scatter__remark" data-reveal>A moment lasts one night. A chapter keeps working long after it.</p>`;
+const capitalise = s => s.charAt(0).toUpperCase() + s.slice(1);
 
 // The traced wordmark, inlined once as symbols so the hero and footer can <use> it and colour it with CSS.
 function sprite(brandDir) {
@@ -47,20 +45,17 @@ export function createRenderer({ root, publicDir, isProd }) {
   };
 
   return function renderHome({ work, query = {} }) {
-    const pieces = work.map(piece);
-    if (pieces.length > 1) pieces.splice(2, 0, REMARK);
-
-    const chosen = SERVICES[query.service] ? query.service : '';
-    const options = [`<option value="" disabled${chosen ? '' : ' selected'}>choose one</option>`]
-      .concat(Object.entries(SERVICES).map(([k, label]) => `<option value="${k}"${k === chosen ? ' selected' : ''}>${escapeHtml(label)}</option>`))
+    const chosen = Object.hasOwn(SERVICES, query.service) ? query.service : '';
+    const options = [`<option value="" disabled${chosen ? '' : ' selected'}>Choose a service</option>`]
+      .concat(Object.entries(SERVICES).map(([k, label]) => `<option value="${k}"${k === chosen ? ' selected' : ''}>${escapeHtml(capitalise(label))}</option>`))
       .join('');
 
     let status = '';
-    if (query.sent === '1') status = '<p class="write__status write__status--ok" role="status">Thank you. Your first chapter is with us, and we will write back from contentbook7@gmail.com.</p>';
-    else if (query.error) status = `<p class="write__status" role="alert">${escapeHtml(String(query.error).slice(0, 200))}</p>`;
+    if (query.sent === '1') status = '<p class="enquiry__status enquiry__status--ok" role="status">Thank you. Your enquiry is with us, and we will reply from contentbook7@gmail.com.</p>';
+    else if (query.error) status = `<p class="enquiry__status" role="alert">${escapeHtml(String(query.error).slice(0, 200))}</p>`;
 
     return template()
-      .replace('<!--work-->', pieces.join('\n      '))
+      .replace('<!--work-->', work.map(job).join('\n          '))
       .replace('<!--service-options-->', options)
       .replace('<!--form-status-->', status)
       .replaceAll('{{year}}', String(new Date().getFullYear()));

@@ -56,7 +56,7 @@ for (const [kind, makeStore] of Object.entries(stores)) {
       const html = await res.text();
       assert.match(html, /Chalo Baithak/);
       assert.match(html, /8,466 plays/);
-      assert.match(html, /<option value="website">a café website<\/option>/);
+      assert.match(html, /<option value="website">A café website<\/option>/);
       assert.match(html, /<symbol id="wm-content"/);
       assert.match(res.headers.get('content-security-policy'), /script-src 'self'/);
     });

@@ -1,40 +1,79 @@
 // Content Book by Tee: the page's behaviour. Everything here is an enhancement:
-// without it the posters show, the sections are visible and the form still posts.
+// without it the stills show, every section is visible and the form still posts.
 
 const root = document.documentElement;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const wide = matchMedia('(min-width: 861px)');
 root.classList.add('js');
+requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add('is-ready')));
 
-// ---------- the cover: staggered arrival, then the clips play ----------
+// ---------- the reel panel ----------
 
-const hero = document.querySelector('.hero');
-const stagger = [...document.querySelectorAll('.hero__clip, .nav, .hero__row > *, .hero__name > svg')];
-stagger.forEach((el, i) => el.style.setProperty('--delay', `${i * 80}ms`));
-requestAnimationFrame(() => requestAnimationFrame(() => hero.classList.add('is-ready')));
+const scenes = new Map([...document.querySelectorAll('.scene')].map(s => [s.dataset.scene, s]));
+const workScene = scenes.get('work');
+let current = 'matcha';
 
-function loadVideo(video) {
-  if (video.dataset.src && !video.src) {
-    video.src = video.dataset.src;
-    video.preload = 'auto';
+function play(video) {
+  if (reduceMotion || !video) return;
+  if (!video.src && video.dataset.src) video.src = video.dataset.src;
+  if (video.src) video.play().catch(() => {});
+}
+
+function show(name) {
+  if (!scenes.has(name)) return;
+  if (name === current) return play(scenes.get(name).querySelector('video'));
+  scenes.get(current)?.classList.remove('is-active');
+  scenes.get(current)?.querySelector('video')?.pause();
+  current = name;
+  scenes.get(name).classList.add('is-active');
+  play(scenes.get(name).querySelector('video'));
+}
+
+// The work scene shows whichever project in the ledger is active.
+function showJob(job) {
+  document.querySelectorAll('.job.is-active').forEach(j => j.classList.remove('is-active'));
+  job.classList.add('is-active');
+  const still = workScene.querySelector('.scene__still');
+  const video = workScene.querySelector('video');
+  still.src = job.dataset.image;
+  workScene.querySelector('figcaption').textContent = job.dataset.caption;
+  video.pause();
+  video.removeAttribute('src');
+  video.hidden = !job.dataset.video;
+  if (job.dataset.video) {
+    video.dataset.src = job.dataset.video;
+    video.poster = job.dataset.image;
+    if (current === 'work') play(video);
   }
+  still.onload = () => workScene.classList.toggle('is-landscape', still.naturalWidth > still.naturalHeight);
 }
 
-// Clips play only while on screen, and never for people who asked for less motion.
-if (!reduceMotion && 'IntersectionObserver' in window) {
-  const clips = new IntersectionObserver(entries => {
-    for (const { target, isIntersecting } of entries) {
-      if (isIntersecting) {
-        loadVideo(target);
-        target.play().catch(() => {});
-      } else {
-        target.pause();
-      }
-    }
-  }, { threshold: 0.35 });
-  document.querySelectorAll('video[data-src]').forEach(v => clips.observe(v));
+const jobs = [...document.querySelectorAll('.job')];
+if (jobs.length) showJob(jobs[0]);
+jobs.forEach(job => {
+  const activate = () => { if (wide.matches) { showJob(job); show('work'); } };
+  job.addEventListener('mouseenter', activate);
+  job.addEventListener('focus', activate);
+});
+
+// Whichever section crosses the middle of the screen picks the scene.
+if ('IntersectionObserver' in window) {
+  const sections = new IntersectionObserver(entries => {
+    for (const { target, isIntersecting } of entries) if (isIntersecting && wide.matches) show(target.dataset.scene);
+  }, { rootMargin: '-45% 0px -45% 0px' });
+  document.querySelectorAll('.stage__read > section[data-scene]').forEach(s => sections.observe(s));
+
+  // Only play while the panel is on screen (it scrolls away on phones).
+  const panel = new IntersectionObserver(([entry]) => {
+    const video = scenes.get(current).querySelector('video');
+    if (entry.isIntersecting) play(video); else video?.pause();
+  });
+  panel.observe(document.querySelector('.stage__media'));
+} else {
+  play(scenes.get('matcha').querySelector('video'));
 }
 
-// ---------- entrances, section by section ----------
+// ---------- entrances ----------
 
 if (!reduceMotion && 'IntersectionObserver' in window) {
   document.querySelectorAll('[data-reveal-group]').forEach(group => {
@@ -46,38 +85,25 @@ if (!reduceMotion && 'IntersectionObserver' in window) {
       target.classList.add('is-in');
       reveal.unobserve(target);
     }
-  }, { rootMargin: '0px 0px -12% 0px' });
+  }, { rootMargin: '0px 0px -10% 0px' });
   document.querySelectorAll('[data-reveal], [data-reveal-group]').forEach(el => reveal.observe(el));
 } else {
   document.querySelectorAll('[data-reveal], [data-reveal-group]').forEach(el => el.classList.add('is-in'));
 }
 
-// ---------- the form: write the first chapter ----------
+// ---------- the enquiry form ----------
 
-const form = document.querySelector('form.chapter');
-const title = document.getElementById('write-title');
-const select = form.elements.service;
+const form = document.querySelector('form.enquiry');
 const fields = ['name', 'brand', 'city', 'service', 'email', 'message'];
-const original = title.textContent;
 
-// The section's title becomes the visitor's chapter as they type.
-function retitle() {
-  const brand = form.elements.brand.value.trim();
-  const city = form.elements.city.value.trim();
-  title.textContent = brand ? `Chapter one: ${brand}${city ? `, ${city}` : ''}` : original;
-}
-form.elements.brand.addEventListener('input', retitle);
-form.elements.city.addEventListener('input', retitle);
-
-// A service row in the menu fills in "Help with" and brings the visitor to the form.
-document.querySelectorAll('.menu__row[data-service]').forEach(row => {
-  row.addEventListener('click', event => {
+// "Ask about …" links fill in the service and bring the visitor to the form.
+document.querySelectorAll('[data-service]').forEach(link => {
+  link.addEventListener('click', event => {
     event.preventDefault();
-    select.value = row.dataset.service;
-    document.getElementById('write').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
-    const empty = fields.map(f => form.elements[f]).find(el => el.required && !el.value);
-    (empty || select).focus({ preventScroll: true });
-    history.replaceState(null, '', '#write');
+    form.elements.service.value = link.dataset.service;
+    document.getElementById('contact').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
+    form.elements.name.focus({ preventScroll: true });
+    history.replaceState(null, '', '#contact');
   });
 });
 
@@ -99,33 +125,22 @@ function showErrors(errors = {}) {
 }
 
 function statusLine(message) {
-  let line = document.querySelector('.write__status');
+  let line = form.querySelector('.enquiry__status');
   if (!line) {
     line = document.createElement('p');
-    line.className = 'write__status';
+    line.className = 'enquiry__status';
     line.setAttribute('role', 'alert');
-    form.after(line);
+    form.append(line);
   }
   line.textContent = message;
 }
 
-function line(...parts) {
-  const div = document.createElement('div');
-  div.className = 'line';
-  // One span, so the row's flex gap does not split the sentence around the bold words.
-  const span = document.createElement('span');
-  span.append(...parts);
-  div.append(span);
-  return div;
-}
-const strong = text => Object.assign(document.createElement('strong'), { textContent: text });
-
 form.addEventListener('submit', async event => {
   event.preventDefault();
-  const button = form.querySelector('.send');
+  const button = form.querySelector('button[type="submit"]');
   const data = Object.fromEntries(new FormData(form));
 
-  // Same checks the server makes, so the visitor hears about them without a round trip.
+  // The same checks the server makes, so the visitor hears about them without a round trip.
   const errors = {};
   if (!data.name.trim()) errors.name = 'Tell us your name.';
   if (!data.brand.trim()) errors.brand = 'Tell us the brand or business.';
@@ -145,17 +160,14 @@ form.addEventListener('submit', async event => {
     if (res.status === 400) return showErrors(body.fields);
     if (!res.ok) return statusLine(body.error || 'That did not send. Email contentbook7@gmail.com instead.');
 
-    // The answers come back as the opening page of their chapter.
-    document.querySelector('.write__status')?.remove();
-    title.textContent = `Chapter one: ${body.brand}${body.city ? `, ${body.city}` : ''}`;
     const done = document.createElement('div');
-    done.className = 'chapter chapter--done';
+    done.className = 'enquiry--done';
     done.setAttribute('role', 'status');
     done.append(
-      line('Thank you, ', strong(body.name), '.'),
-      line('It starts with ', strong(body.service), ','),
-      line('and a call about your budget.'),
-      line('We will write to ', strong(body.email), '.'),
+      Object.assign(document.createElement('h3'), { textContent: `Thank you, ${body.name}.` }),
+      Object.assign(document.createElement('p'), {
+        textContent: `We have your enquiry about ${body.service} for ${body.brand}. We will reply to ${body.email} to set up a call.`,
+      }),
     );
     form.replaceWith(done);
   } catch {

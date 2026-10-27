@@ -54,13 +54,14 @@ The tests cover the form (with and without JavaScript), validation, the spam tra
 
 ## How the design works
 
-- **The page is the book's cover.** The top of the first screen is three of our own reels playing side by side (the Blank Street matcha pour, the Chalo Baithak singer, the KDP dhol night). Under them, the name runs edge to edge in the logo's own lettering.
-- **The lettering is the real logo.** `content book`, `BY-TEE` and the one-line drawing were traced from the logo PNG into SVG paths, so they stay sharp at any size and take any colour. On phones the name stacks into two lines.
-- **Colours come from the brand.** The paper is the supplied texture (`paper.webp`, average `#c0d6bb`). The ink `#1e2a1f` is the logo's line. The button green `#2c4a33` is the green of the Instagram headlines. The footer turns the page over: dark ground, sage lettering.
-- **Type** is Fraunces, a soft serif close to the one on the Instagram posts, used for everything else.
-- **The form is the first chapter.** It is written as a sentence ("My name is… I run… Based in… Help with…"). The heading becomes "Chapter one: *your brand*" as the visitor types. After sending, the visitor's answers come back as the opening lines of their chapter. Clicking a service fills in "Help with".
+- **A company site in two halves.** On wide screens, a panel of our own reels stays fixed on the left (Blank Street, Chalo Baithak, KDP Studios) and changes to match the section you are reading. Hovering a project in the work list plays that project in the panel. The right half reads like a company site: headline, numbers, services, work, process, the founder's letter, the committee and the FAQ. On phones the reel sits on top and each project shows its own still.
+- **The logo is real.** `content book`, `BY-TEE` and the one-line drawing were traced from the logo PNG into SVG, so they stay sharp in the nav at any size.
+- **Colours come from the brand.** The paper is the supplied texture (`paper.webp`, average `#c0d6bb`). The ink `#1e2a1f` is the logo's line. The button green `#2c4a33` is the green of the Instagram headlines. Contact and footer are on the dark green.
+- **Type** is Work Sans, one family: light for headlines, regular for reading.
+- **Committee.** The "Our committee" section says "Coming soon. Stay tuned." until the team is ready to be shown. It is in `server/views/home.html` under `id="team"`.
+- **The form** asks for name, brand, city, the service and email, and fills in the service when you click an "Ask about…" link.
 - **No prices.** The page says pricing is agreed on a call, around the budget the client sets.
-- **Motion.** The clips play only while on screen. Each section's parts rise in as you reach them, the name settles as you scroll off the cover, and the footer name grows in. All of it switches off for people who ask for reduced motion. Their browser shows still frames and everything stays readable.
+- **Motion.** The clips play only while on screen. Each section's parts rise in as you reach them, and the panel's clip settles from a slight zoom when it changes. All of it switches off for people who ask for reduced motion. Their browser shows still frames and everything stays readable.
 
 > This PC has Windows "Animation effects" turned off, so browsers here report *reduced motion*: the clips show as still frames and nothing animates. That is the page respecting the setting, not a bug. To see the motion, turn on **Settings → Accessibility → Visual effects → Animation effects**, or view the site on a phone.
 
