@@ -1,4 +1,4 @@
-import { SERVICES } from './db.js';
+import { SERVICES } from './content.js';
 
 // Emails the studio when an enquiry arrives. Without SMTP settings it does nothing,
 // and the enquiry is still saved and shown on the desk.

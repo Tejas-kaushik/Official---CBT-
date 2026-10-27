@@ -38,7 +38,9 @@ The tests cover the form (with and without JavaScript), validation, the spam tra
 |---|---|
 | `server/index.js` | Starts the server |
 | `server/app.js` | Pages, the public API and the desk API, with validation and security headers |
-| `server/db.js` | Database tables, the service list, the enquiry statuses, and the work seeded on first run |
+| `server/content.js` | The service list, the enquiry statuses, and the work seeded on first run |
+| `server/store/` | Where data lives: SQLite on a disk (`sqlite.js`) or Upstash Redis on Vercel (`redis.js`) |
+| `api/index.js`, `vercel.json` | The Vercel entry point and routing |
 | `server/auth.js` | Desk sign-in (signed cookie), rate limiting |
 | `server/mail.js` | Optional email alert for new enquiries |
 | `server/render.js` | Puts the work, the form options and the wordmark into the page |
@@ -84,9 +86,22 @@ To get an email for every enquiry, fill in the `SMTP_*` settings in `.env`. For 
 | `PATCH` / `DELETE` | `/api/desk/work/:id` | Edit or remove work |
 | `POST` | `/api/desk/uploads` | Upload an image as a data URL |
 
-## Deploy
+## Deploy on Vercel
 
-The site needs a server, so GitHub Pages will not run it. Any Node host works if it keeps files between deploys. For example:
+GitHub Pages only serves static files, so it cannot run the form or the desk. Vercel can. `vercel.json` sends every request that is not a file in `public/` to `api/index.js`, which runs the same Express app.
+
+Vercel has no disk that lasts, so on Vercel the data lives in **Upstash Redis** (free tier). The app switches to it automatically when its credentials are set.
+
+1. **Import the repo.** Go to [vercel.com/new](https://vercel.com/new), sign in with GitHub and import `Tejas-kaushik/Official---CBT-`. Leave the build settings as they are.
+2. **Add the database.** In the project, open **Storage → Create → Upstash for Redis** (free plan) and connect it to the project. This sets `KV_REST_API_URL` and `KV_REST_API_TOKEN` for you.
+3. **Set the desk password.** In **Settings → Environment Variables**, add `ADMIN_PASSWORD`. Optionally add `SESSION_SECRET` and the `SMTP_*` settings for email alerts.
+4. **Redeploy.** Under **Deployments**, open the latest one, choose **Redeploy**, then open the site and `/admin`.
+
+On Vercel the desk links images instead of uploading them: paste an `https://` image link, or add the file to `public/assets/` and push.
+
+## Deploy on a server with a disk
+
+Any Node host that keeps files between deploys runs it with SQLite instead. For example:
 
 - **Render**: a Web Service with build command `npm install`, start command `npm start`, and a persistent disk mounted at `/var/data`.
 - **Railway**: a service from this repository with a volume mounted at `/data`.

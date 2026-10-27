@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
-import { SERVICES, STATUSES } from './db.js';
+import { SERVICES, STATUSES } from './content.js';
 import { createRenderer } from './render.js';
 import { passwordMatches, issueSession, clearSession, hasSession, requireDesk, rateLimit } from './auth.js';
 
@@ -68,10 +68,10 @@ const IMAGE_TYPES = {
   'image/webp': { ext: '.webp', magic: b => b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP' },
 };
 
-export function createApp({ db, config, notifier }) {
+export function createApp({ store, config, notifier }) {
   const app = express();
   const renderHome = createRenderer(config);
-  fs.mkdirSync(config.uploadsDir, { recursive: true });
+  if (store.canUpload) fs.mkdirSync(config.uploadsDir, { recursive: true });
 
   app.disable('x-powered-by');
   if (config.isProd) app.set('trust proxy', 1);
@@ -97,22 +97,11 @@ export function createApp({ db, config, notifier }) {
     next();
   });
 
-  const q = {
-    publishedWork: db.prepare('SELECT id, title, summary, metric, link, image, video, alt FROM work WHERE published = 1 ORDER BY position, id'),
-    allWork: db.prepare('SELECT * FROM work ORDER BY position, id'),
-    getWork: db.prepare('SELECT * FROM work WHERE id = ?'),
-    deleteWork: db.prepare('DELETE FROM work WHERE id = ?'),
-    insertEnquiry: db.prepare('INSERT INTO enquiries (name, brand, city, service, email, message) VALUES (?, ?, ?, ?, ?, ?)'),
-    getEnquiry: db.prepare('SELECT * FROM enquiries WHERE id = ?'),
-    deleteEnquiry: db.prepare('DELETE FROM enquiries WHERE id = ?'),
-    counts: db.prepare('SELECT status, COUNT(*) AS n FROM enquiries GROUP BY status'),
-  };
-
   // ---------- pages ----------
 
-  app.get('/', (req, res) => {
+  app.get('/', async (req, res) => {
     res.set('Cache-Control', 'no-cache');
-    res.type('html').send(renderHome({ work: q.publishedWork.all(), query: req.query }));
+    res.type('html').send(renderHome({ work: await store.work.published(), query: req.query }));
   });
 
   app.get(['/admin', '/admin/'], (req, res) => {
@@ -121,11 +110,11 @@ export function createApp({ db, config, notifier }) {
   });
 
   app.use(express.static(config.publicDir, { index: false, maxAge: config.isProd ? '7d' : 0 }));
-  app.use('/uploads', express.static(config.uploadsDir, { maxAge: config.isProd ? '30d' : 0 }));
+  if (store.canUpload) app.use('/uploads', express.static(config.uploadsDir, { maxAge: config.isProd ? '30d' : 0 }));
 
   // ---------- public API ----------
 
-  app.get('/api/work', (req, res) => res.json(q.publishedWork.all()));
+  app.get('/api/work', async (req, res) => res.json(await store.work.published()));
 
   app.post(
     '/api/enquiries',
@@ -145,9 +134,9 @@ export function createApp({ db, config, notifier }) {
         return res.redirect(303, `/?error=${encodeURIComponent(Object.values(errors)[0])}#write`);
       }
 
-      const { lastInsertRowid } = q.insertEnquiry.run(e.name, e.brand, e.city, e.service, e.email, e.message);
-      const saved = { id: Number(lastInsertRowid), ...e };
-      notifier.enquiry(saved).catch(err => console.error(`Enquiry #${saved.id} saved, but the email failed:`, err.message));
+      const saved = await store.enquiries.add(e);
+      // Awaited so a serverless host does not stop the function before the email is out.
+      await notifier.enquiry(saved).catch(err => console.error(`Enquiry #${saved.id} saved, but the email failed:`, err.message));
 
       if (!wantsJson) return res.redirect(303, '/?sent=1#write');
       res.status(201).json({ ok: true, id: saved.id, name: e.name, brand: e.brand, city: e.city, email: e.email, service: SERVICES[e.service] });
@@ -170,7 +159,9 @@ export function createApp({ db, config, notifier }) {
     },
   );
 
-  desk.get('/me', (req, res) => res.json({ signedIn: hasSession(req, config), configured: Boolean(config.adminPassword), mail: notifier.enabled }));
+  desk.get('/me', (req, res) =>
+    res.json({ signedIn: hasSession(req, config), configured: Boolean(config.adminPassword), mail: notifier.enabled, uploads: store.canUpload }),
+  );
 
   desk.post('/logout', (req, res) => {
     clearSession(res, config);
@@ -179,74 +170,62 @@ export function createApp({ db, config, notifier }) {
 
   desk.use(requireDesk(config));
 
-  desk.get('/enquiries', (req, res) => {
+  desk.get('/enquiries', async (req, res) => {
     const status = text(req.query, 'status');
-    const rows = STATUSES.includes(status)
-      ? db.prepare('SELECT * FROM enquiries WHERE status = ? ORDER BY created_at DESC').all(status)
-      : db.prepare('SELECT * FROM enquiries ORDER BY created_at DESC').all();
-    const counts = Object.fromEntries(STATUSES.map(s => [s, 0]));
-    for (const { status: s, n } of q.counts.all()) counts[s] = n;
-    res.json({ enquiries: rows, counts, statuses: STATUSES, services: SERVICES });
+    const enquiries = await store.enquiries.list(STATUSES.includes(status) ? status : '');
+    const counts = { ...Object.fromEntries(STATUSES.map(s => [s, 0])), ...(await store.enquiries.counts()) };
+    res.json({ enquiries, counts, statuses: STATUSES, services: SERVICES });
   });
 
-  desk.patch('/enquiries/:id', (req, res) => {
-    const id = Number(req.params.id);
-    if (!q.getEnquiry.get(id)) return res.status(404).json({ error: 'No such enquiry.' });
-    const sets = [];
-    const args = [];
+  desk.patch('/enquiries/:id', async (req, res) => {
+    const changes = {};
     if (Object.hasOwn(req.body ?? {}, 'status')) {
       if (!STATUSES.includes(req.body.status)) return res.status(400).json({ error: 'Unknown status.' });
-      sets.push('status = ?');
-      args.push(req.body.status);
+      changes.status = req.body.status;
     }
     if (Object.hasOwn(req.body ?? {}, 'notes')) {
       const notes = String(req.body.notes ?? '');
       if (notes.length > 5000) return res.status(400).json({ error: 'Keep notes under 5,000 characters.' });
-      sets.push('notes = ?');
-      args.push(notes);
+      changes.notes = notes;
     }
-    if (!sets.length) return res.status(400).json({ error: 'Nothing to change.' });
-    db.prepare(`UPDATE enquiries SET ${sets.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`).run(...args, id);
-    res.json(q.getEnquiry.get(id));
+    if (!Object.keys(changes).length) return res.status(400).json({ error: 'Nothing to change.' });
+    const updated = await store.enquiries.update(Number(req.params.id), changes);
+    if (!updated) return res.status(404).json({ error: 'No such enquiry.' });
+    res.json(updated);
   });
 
-  desk.delete('/enquiries/:id', (req, res) => {
-    const { changes } = q.deleteEnquiry.run(Number(req.params.id));
-    if (!changes) return res.status(404).json({ error: 'No such enquiry.' });
+  desk.delete('/enquiries/:id', async (req, res) => {
+    if (!(await store.enquiries.remove(Number(req.params.id)))) return res.status(404).json({ error: 'No such enquiry.' });
     res.json({ ok: true });
   });
 
-  desk.get('/work', (req, res) => res.json(q.allWork.all()));
+  desk.get('/work', async (req, res) => res.json(await store.work.all()));
 
-  desk.post('/work', (req, res) => {
+  desk.post('/work', async (req, res) => {
     const { w, errors } = readWork(req.body, false);
     if (Object.keys(errors).length) return res.status(400).json({ error: 'Some fields need another look.', fields: errors });
-    const position = w.position ?? db.prepare('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM work').get().p;
-    const { lastInsertRowid } = db
-      .prepare('INSERT INTO work (title, summary, metric, link, image, video, alt, position, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(w.title, w.summary ?? '', w.metric ?? '', w.link ?? '', w.image, w.video ?? '', w.alt ?? '', position, w.published ?? 1);
-    res.status(201).json(q.getWork.get(Number(lastInsertRowid)));
+    res.status(201).json(await store.work.add(w));
   });
 
-  desk.patch('/work/:id', (req, res) => {
-    const id = Number(req.params.id);
-    if (!q.getWork.get(id)) return res.status(404).json({ error: 'No such piece of work.' });
+  desk.patch('/work/:id', async (req, res) => {
     const { w, errors } = readWork(req.body, true);
     if (Object.keys(errors).length) return res.status(400).json({ error: 'Some fields need another look.', fields: errors });
-    const keys = Object.keys(w);
-    if (!keys.length) return res.status(400).json({ error: 'Nothing to change.' });
-    db.prepare(`UPDATE work SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map(k => w[k]), id);
-    res.json(q.getWork.get(id));
+    if (!Object.keys(w).length) return res.status(400).json({ error: 'Nothing to change.' });
+    const updated = await store.work.update(Number(req.params.id), w);
+    if (!updated) return res.status(404).json({ error: 'No such piece of work.' });
+    res.json(updated);
   });
 
-  desk.delete('/work/:id', (req, res) => {
-    const { changes } = q.deleteWork.run(Number(req.params.id));
-    if (!changes) return res.status(404).json({ error: 'No such piece of work.' });
+  desk.delete('/work/:id', async (req, res) => {
+    if (!(await store.work.remove(Number(req.params.id)))) return res.status(404).json({ error: 'No such piece of work.' });
     res.json({ ok: true });
   });
 
   // Images arrive as data URLs from the desk's file picker and are saved under DATA_DIR/uploads.
   desk.post('/uploads', (req, res) => {
+    if (!store.canUpload) {
+      return res.status(501).json({ error: 'Uploads are off on this host. Paste an https:// image link instead, or add the file to public/assets and redeploy.' });
+    }
     const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(text(req.body, 'dataUrl'));
     if (!match) return res.status(400).json({ error: 'Upload a JPG, PNG or WebP image.' });
     const type = IMAGE_TYPES[match[1]];

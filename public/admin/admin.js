@@ -271,6 +271,8 @@ workForm.addEventListener('submit', async event => {
 
 api('/me').then(me => {
   $('#mail-note').textContent = me.mail ? 'New enquiries are emailed to the studio.' : 'Email alerts are off (no SMTP set).';
+  // On hosts without a disk, images are linked rather than uploaded.
+  $('#upload').closest('label').hidden = !me.uploads;
   if (!me.configured) return showSignin('The desk is locked: set ADMIN_PASSWORD in the server settings.');
   return me.signedIn ? showDesk() : showSignin();
 }).catch(() => showSignin('The desk could not reach the server.'));
