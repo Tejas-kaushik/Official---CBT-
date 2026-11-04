@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS work (
   published  INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+  name  TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint     TEXT PRIMARY KEY,
+  subscription TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
 `;
 
 const WORK_FIELDS = ['title', 'summary', 'metric', 'link', 'image', 'video', 'alt', 'position', 'published'];
@@ -60,6 +71,11 @@ export function createSqliteStore(file) {
     byStatus: db.prepare('SELECT * FROM enquiries WHERE status = ? ORDER BY created_at DESC, id DESC'),
     deleteEnquiry: db.prepare('DELETE FROM enquiries WHERE id = ?'),
     counts: db.prepare('SELECT status, COUNT(*) AS n FROM enquiries GROUP BY status'),
+    getSetting: db.prepare('SELECT value FROM settings WHERE name = ?'),
+    initSetting: db.prepare('INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)'),
+    allSubs: db.prepare('SELECT subscription, created_at FROM push_subscriptions ORDER BY created_at'),
+    putSub: db.prepare('INSERT OR REPLACE INTO push_subscriptions (endpoint, subscription) VALUES (?, ?)'),
+    deleteSub: db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?'),
   };
 
   return {
@@ -105,6 +121,28 @@ export function createSqliteStore(file) {
       },
       async remove(id) {
         return q.deleteWork.run(id).changes > 0;
+      },
+    },
+    settings: {
+      async get(name) {
+        const row = q.getSetting.get(name);
+        return row ? JSON.parse(row.value) : null;
+      },
+      // Keeps the first value ever written.
+      async init(name, value) {
+        q.initSetting.run(name, JSON.stringify(value));
+        return JSON.parse(q.getSetting.get(name).value);
+      },
+    },
+    push: {
+      async list() {
+        return q.allSubs.all().map(r => ({ ...JSON.parse(r.subscription), created_at: r.created_at }));
+      },
+      async add(sub) {
+        q.putSub.run(sub.endpoint, JSON.stringify(sub));
+      },
+      async remove(endpoint) {
+        return q.deleteSub.run(endpoint).changes > 0;
       },
     },
     close() {

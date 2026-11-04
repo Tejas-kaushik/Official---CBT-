@@ -7,6 +7,7 @@ import { loadConfig } from '../server/config.js';
 import { createSqliteStore } from '../server/store/sqlite.js';
 import { createRedisStore } from '../server/store/redis.js';
 import { createApp } from '../server/app.js';
+import { createPush } from '../server/push.js';
 import { fakeUpstash } from './fake-upstash.js';
 
 // The same checks run against both stores: SQLite (local, Render) and Upstash Redis (Vercel).
@@ -21,7 +22,16 @@ for (const [kind, makeStore] of Object.entries(stores)) {
     const config = loadConfig({ adminPassword: 'test-password', uploadsDir: path.join(tmp, 'uploads'), isProd: false });
     const store = makeStore();
     const sent = [];
-    const app = createApp({ store, config, notifier: { enabled: true, enquiry: async e => sent.push(e) } });
+    const pushed = [];
+    const gone = new Set();
+    const push = createPush(store, {
+      subject: 'mailto:test@example.com',
+      send: async (sub, payload, options) => {
+        if (gone.has(sub.endpoint)) throw Object.assign(new Error('Gone'), { statusCode: 410 });
+        pushed.push({ endpoint: sub.endpoint, ...JSON.parse(payload), publicKey: options.vapidDetails.publicKey });
+      },
+    });
+    const app = createApp({ store, config, notifier: { enabled: true, enquiry: async e => sent.push(e) }, push });
 
     let server;
     let base;
@@ -166,6 +176,56 @@ for (const [kind, makeStore] of Object.entries(stores)) {
 
       const fake = await fetch(`${base}/api/desk/uploads`, json('POST', { dataUrl: `data:image/png;base64,${Buffer.from('<svg onload=alert(1)>').toString('base64')}` }, cookie));
       assert.equal(fake.status, 400);
+    });
+
+    const phone = n => ({ endpoint: `https://push.example.com/phone-${n}`, keys: { p256dh: 'BKey'.padEnd(87, 'x'), auth: 'auth-secret-16' } });
+
+    test('phone alerts need the desk password', async () => {
+      assert.equal((await fetch(`${base}/api/desk/push`)).status, 401);
+      assert.equal((await fetch(`${base}/api/desk/push/subscribe`, json('POST', { subscription: phone(1) }))).status, 401);
+      assert.equal((await fetch(`${base}/api/desk/push/test`, json('POST', {}))).status, 401);
+    });
+
+    test('a phone subscribes once and gets an alert for each new enquiry, linked to it', async () => {
+      const cookie = await signIn();
+      const { publicKey } = await (await fetch(`${base}/api/desk/push`, { headers: { Cookie: cookie } })).json();
+      assert.match(publicKey, /^[A-Za-z0-9_-]{80,}$/);
+      // the key is kept, not remade
+      assert.equal((await (await fetch(`${base}/api/desk/push`, { headers: { Cookie: cookie } })).json()).publicKey, publicKey);
+
+      assert.equal((await fetch(`${base}/api/desk/push/subscribe`, json('POST', { subscription: { endpoint: 'javascript:alert(1)', keys: {} } }, cookie))).status, 400);
+      for (let i = 0; i < 2; i++) assert.equal((await fetch(`${base}/api/desk/push/subscribe`, json('POST', { subscription: phone(1) }, cookie))).status, 201);
+      const res = await fetch(`${base}/api/desk/push/subscribe`, json('POST', { subscription: phone(2) }, cookie));
+      assert.equal((await res.json()).phones, 2);
+
+      pushed.length = 0;
+      const saved = await (await fetch(`${base}/api/enquiries`, json('POST', { ...enquiry, brand: 'Toro Coffee' }))).json();
+      assert.equal(pushed.length, 2);
+      assert.equal(pushed[0].title, 'New enquiry: Toro Coffee');
+      assert.match(pushed[0].body, /Eilidh \(Glasgow\) wants a café website\. "Opening hours reel\?"/);
+      assert.equal(pushed[0].url, `/admin#enquiry-${saved.id}`);
+      assert.equal(pushed[0].publicKey, publicKey);
+    });
+
+    test('a phone that has gone away is forgotten, and the test alert reports who got it', async () => {
+      const cookie = await signIn();
+      gone.add(phone(2).endpoint);
+      const first = await (await fetch(`${base}/api/desk/push/test`, json('POST', {}, cookie))).json();
+      assert.deepEqual(first, { sent: 1, removed: 1 });
+      assert.equal((await store.push.list()).length, 1);
+
+      const off = await fetch(`${base}/api/desk/push/unsubscribe`, json('POST', { endpoint: phone(1).endpoint }, cookie));
+      assert.equal((await off.json()).phones, 0);
+      assert.deepEqual(await (await fetch(`${base}/api/desk/push/test`, json('POST', {}, cookie))).json(), { sent: 0, removed: 0 });
+    });
+
+    test('the desk is installable and its service worker is served', async () => {
+      const manifest = await (await fetch(`${base}/admin/manifest.webmanifest`)).json();
+      assert.equal(manifest.start_url, '/admin');
+      assert.equal(manifest.display, 'standalone');
+      const sw = await fetch(`${base}/sw.js`);
+      assert.equal(sw.status, 200);
+      assert.match(await sw.text(), /notificationclick/);
     });
 
     test('error messages are escaped on the page', async () => {

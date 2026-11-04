@@ -1,12 +1,14 @@
 import { loadConfig } from './config.js';
 import { openStore } from './store/index.js';
 import { createNotifier } from './mail.js';
+import { createPush } from './push.js';
 import { createApp } from './app.js';
 
 const config = loadConfig();
 const store = await openStore(config);
 const notifier = createNotifier(config.mail);
-const app = createApp({ store, config, notifier });
+const push = createPush(store, { subject: `mailto:${config.mail.to}` });
+const app = createApp({ store, config, notifier, push });
 
 if (!config.adminPassword) console.warn('ADMIN_PASSWORD is not set: the studio desk at /admin stays locked.');
 

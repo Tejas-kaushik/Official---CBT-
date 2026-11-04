@@ -36,7 +36,25 @@ async function showDesk() {
   $('#signin').hidden = true;
   $('#desk').hidden = false;
   await Promise.all([loadEnquiries(), loadWork()]);
+  openFromLink();
+  renderAlerts();
 }
+
+// A phone alert links to /admin#enquiry-12: open that enquiry.
+function openFromLink() {
+  const match = location.hash.match(/^#enquiry-(\d+)$/);
+  if (!match) return;
+  state.selected = Number(match[1]);
+  renderRows();
+  renderDetail();
+  $('#detail').scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+addEventListener('hashchange', async () => {
+  if ($('#desk').hidden) return;
+  state.filter = '';
+  await loadEnquiries();
+  openFromLink();
+});
 
 $('#signin-form').addEventListener('submit', async event => {
   event.preventDefault();
@@ -266,6 +284,97 @@ workForm.addEventListener('submit', async event => {
     $('#work-msg').textContent = first ? `${first[0]}: ${first[1]}` : err.message;
   }
 });
+
+// ---------- phone alerts ----------
+// Each phone turns alerts on once. On iPhone this only works from the desk added to the home
+// screen (iOS 16.4 and later); Android Chrome works straight from the browser.
+
+const canPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const onIphone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const fromHomeScreen = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let worker;
+
+const say = text => {
+  $('#alerts-msg').textContent = text;
+  $('#alerts-msg').hidden = !text;
+};
+const phones = n => `${n} phone${n === 1 ? '' : 's'}`;
+const keyBytes = base64 => {
+  const raw = atob((base64 + '='.repeat((4 - (base64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+};
+
+async function mySubscription() {
+  worker ??= await navigator.serviceWorker.register('/sw.js', { scope: '/admin' });
+  await navigator.serviceWorker.ready;
+  return worker.pushManager.getSubscription();
+}
+
+async function renderAlerts() {
+  const button = $('#alerts');
+  if (!canPush) {
+    button.dataset.mode = 'help';
+    button.textContent = 'Phone alerts';
+    return;
+  }
+  const sub = await mySubscription().catch(() => null);
+  const on = Boolean(sub) && Notification.permission === 'granted';
+  button.dataset.mode = on ? 'on' : 'off';
+  button.textContent = on ? 'Alerts on: send a test' : 'Turn on phone alerts';
+  $('#alerts-off').hidden = !on;
+  // Keep the server's list in step with this phone, in case it was cleared.
+  if (on) api('/push/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } }).catch(() => {});
+}
+
+$('#alerts').addEventListener('click', async () => {
+  const mode = $('#alerts').dataset.mode;
+  try {
+    if (mode === 'help') {
+      return say(onIphone && !fromHomeScreen
+        ? 'On iPhone: tap Share, then "Add to Home Screen". Open the CBT desk from that new icon, sign in, and tap "Turn on phone alerts" there.'
+        : 'This browser cannot show phone alerts. Use Chrome on Android, or the desk added to your iPhone home screen.');
+    }
+    if (mode === 'on') {
+      const { sent } = await api('/push/test', { method: 'POST', body: {} });
+      return say(sent ? `Test alert sent to ${phones(sent)}. It should pop up in a moment.` : 'No phones are signed up for alerts yet.');
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return say('Notifications are blocked for the desk. Allow them in your phone settings, then try again.');
+    const { publicKey } = await api('/push');
+    let sub = await mySubscription();
+    // A subscription made with an older key cannot be reused.
+    if (sub && btoa(String.fromCharCode(...new Uint8Array(sub.options.applicationServerKey))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') !== publicKey) {
+      await sub.unsubscribe();
+      sub = null;
+    }
+    sub ??= await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) });
+    const res = await api('/push/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } });
+    say(`Alerts are on for this phone (${phones(res.phones)} in total). Every new enquiry will pop up here, and tapping it opens the enquiry.`);
+  } catch (err) {
+    say(err.message || 'Phone alerts could not be turned on.');
+  }
+  renderAlerts();
+});
+
+$('#alerts-off').addEventListener('click', async () => {
+  const sub = await mySubscription().catch(() => null);
+  if (sub) {
+    await api('/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } }).catch(() => {});
+    await sub.unsubscribe();
+  }
+  say('Alerts are off for this phone.');
+  renderAlerts();
+});
+
+// The desk is already open when an alert is tapped: jump to that enquiry.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data?.type !== 'open') return;
+    const hash = new URL(event.data.url).hash;
+    if (location.hash === hash) dispatchEvent(new HashChangeEvent('hashchange'));
+    else location.hash = hash;
+  });
+}
 
 // ---------- start ----------
 

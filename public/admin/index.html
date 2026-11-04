@@ -6,6 +6,13 @@
   <title>Studio desk: Content Book by Tee</title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="/assets/brand/favicon.png" type="image/png">
+  <link rel="manifest" href="/admin/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/admin/apple-touch-icon.png">
+  <meta name="theme-color" content="#1e2a1f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="CBT desk">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;600&display=swap">
@@ -32,9 +39,12 @@
         <button class="tab" type="button" data-tab="enquiries" aria-pressed="true">Enquiries <span class="tab__count" id="new-count"></span></button>      </nav>
       <div class="bar__end">
         <span class="bar__note" id="mail-note"></span>
+        <button class="linkish" type="button" id="alerts">Phone alerts</button>
+        <button class="linkish" type="button" id="alerts-off" hidden>Turn off</button>
         <button class="linkish" type="button" id="signout">Sign out</button>
       </div>
     </header>
+    <p class="alerts-msg" id="alerts-msg" role="status" hidden></p>
 
     <section class="panel" id="panel-enquiries" aria-labelledby="enquiries-title">
       <h1 class="visually-hidden" id="enquiries-title">Enquiries</h1>

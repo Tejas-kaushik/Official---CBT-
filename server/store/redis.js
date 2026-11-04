@@ -30,6 +30,10 @@ export function createRedisStore({ url, token, fetch: send = fetch, prefix = 'cb
   }
   const saveWork = list => call('SET', key('work'), JSON.stringify(list));
 
+  // Phones subscribed to push alerts: a short list, so one JSON array.
+  const readSubs = async () => JSON.parse((await call('GET', key('push'))) || '[]');
+  const saveSubs = list => call('SET', key('push'), JSON.stringify(list));
+
   async function allEnquiries() {
     const ids = await call('ZRANGE', key('enquiries'), 0, -1, 'REV');
     if (!ids?.length) return [];
@@ -101,6 +105,30 @@ export function createRedisStore({ url, token, fetch: send = fetch, prefix = 'cb
         if (rest.length === list.length) return false;
         await saveWork(rest);
         return true;
+      },
+    },
+    settings: {
+      async get(name) {
+        const value = await call('GET', key(`setting:${name}`));
+        return value ? JSON.parse(value) : null;
+      },
+      // Keeps the first value ever written, so two cold starts cannot make different keys.
+      async init(name, value) {
+        await call('SET', key(`setting:${name}`), JSON.stringify(value), 'NX');
+        return JSON.parse(await call('GET', key(`setting:${name}`)));
+      },
+    },
+    push: {
+      list: readSubs,
+      async add(sub) {
+        const list = (await readSubs()).filter(s => s.endpoint !== sub.endpoint);
+        await saveSubs([...list, { ...sub, created_at: now() }]);
+      },
+      async remove(endpoint) {
+        const list = await readSubs();
+        const rest = list.filter(s => s.endpoint !== endpoint);
+        if (rest.length !== list.length) await saveSubs(rest);
+        return rest.length !== list.length;
       },
     },
     close() {},

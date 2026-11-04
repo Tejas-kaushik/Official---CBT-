@@ -68,7 +68,9 @@ const IMAGE_TYPES = {
   'image/webp': { ext: '.webp', magic: b => b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP' },
 };
 
-export function createApp({ store, config, notifier }) {
+const NO_PUSH = { publicKey: async () => '', subscribe: async () => {}, unsubscribe: async () => false, count: async () => 0, test: async () => ({ sent: 0 }), enquiry: async () => {} };
+
+export function createApp({ store, config, notifier, push = NO_PUSH }) {
   const app = express();
   const renderHome = createRenderer(config);
   if (store.canUpload) fs.mkdirSync(config.uploadsDir, { recursive: true });
@@ -135,8 +137,11 @@ export function createApp({ store, config, notifier }) {
       }
 
       const saved = await store.enquiries.add(e);
-      // Awaited so a serverless host does not stop the function before the email is out.
-      await notifier.enquiry(saved).catch(err => console.error(`Enquiry #${saved.id} saved, but the email failed:`, err.message));
+      // Awaited so a serverless host does not stop the function before the email and the push are out.
+      await Promise.all([
+        notifier.enquiry(saved).catch(err => console.error(`Enquiry #${saved.id} saved, but the email failed:`, err.message)),
+        push.enquiry(saved).catch(err => console.error(`Enquiry #${saved.id} saved, but the phone alert failed:`, err.message)),
+      ]);
 
       if (!wantsJson) return res.redirect(303, '/?sent=1#contact');
       res.status(201).json({ ok: true, id: saved.id, name: e.name, brand: e.brand, city: e.city, email: e.email, service: SERVICES[e.service] });
@@ -169,6 +174,26 @@ export function createApp({ store, config, notifier }) {
   });
 
   desk.use(requireDesk(config));
+
+  // phone alerts: each phone subscribes from the desk
+  desk.get('/push', async (req, res) => res.json({ publicKey: await push.publicKey(), phones: await push.count() }));
+
+  desk.post('/push/subscribe', async (req, res) => {
+    const sub = req.body?.subscription;
+    const ok = sub && typeof sub.endpoint === 'string' && /^https:\/\/\S{8,1000}$/.test(sub.endpoint)
+      && typeof sub.keys?.p256dh === 'string' && sub.keys.p256dh.length < 200
+      && typeof sub.keys?.auth === 'string' && sub.keys.auth.length < 100;
+    if (!ok) return res.status(400).json({ error: 'That is not a push subscription.' });
+    await push.subscribe(sub);
+    res.status(201).json({ ok: true, phones: await push.count() });
+  });
+
+  desk.post('/push/unsubscribe', async (req, res) => {
+    await push.unsubscribe(text(req.body, 'endpoint'));
+    res.json({ ok: true, phones: await push.count() });
+  });
+
+  desk.post('/push/test', async (req, res) => res.json(await push.test()));
 
   desk.get('/enquiries', async (req, res) => {
     const status = text(req.query, 'status');

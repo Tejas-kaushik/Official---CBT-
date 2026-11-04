@@ -1,0 +1,16 @@
+{
+  "name": "CBT Studio desk",
+  "short_name": "CBT desk",
+  "description": "Enquiries from the Content Book by Tee website.",
+  "id": "/admin",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#c0d6bb",
+  "theme_color": "#2c4a33",
+  "icons": [
+    { "src": "/admin/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/admin/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/admin/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
