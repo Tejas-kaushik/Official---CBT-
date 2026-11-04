@@ -335,8 +335,12 @@ $('#alerts').addEventListener('click', async () => {
         : 'This browser cannot show phone alerts. Use Chrome on Android, or the desk added to your iPhone home screen.');
     }
     if (mode === 'on') {
-      const { sent } = await api('/push/test', { method: 'POST', body: {} });
-      return say(sent ? `Test alert sent to ${phones(sent)}. It should pop up in a moment.` : 'No phones are signed up for alerts yet.');
+      // Phones only show the banner when the desk is not on screen, so the test waits a few seconds.
+      say('Sending a test in 8 seconds. Lock your phone or go to your home screen now to see it pop up.');
+      const { sent } = await api('/push/test', { method: 'POST', body: { delay: 8 } });
+      return say(sent
+        ? `Test alert sent to ${phones(sent)}. No banner? Swipe down for Notification Center, and check Settings → Notifications → CBT desk has Banners on and no Focus mode is blocking it.`
+        : 'No phones are signed up for alerts yet.');
     }
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return say('Notifications are blocked for the desk. Allow them in your phone settings, then try again.');

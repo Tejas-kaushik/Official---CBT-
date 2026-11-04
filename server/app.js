@@ -193,7 +193,13 @@ export function createApp({ store, config, notifier, push = NO_PUSH }) {
     res.json({ ok: true, phones: await push.count() });
   });
 
-  desk.post('/push/test', async (req, res) => res.json(await push.test()));
+  // A phone does not show a banner for the app that is open on screen, so the desk can ask
+  // for the test a few seconds later, giving time to lock the phone or switch apps.
+  desk.post('/push/test', async (req, res) => {
+    const wait = Math.min(Math.max(Number(req.body?.delay) || 0, 0), 8);
+    if (wait) await new Promise(r => setTimeout(r, wait * 1000));
+    res.json(await push.test());
+  });
 
   desk.get('/enquiries', async (req, res) => {
     const status = text(req.query, 'status');
