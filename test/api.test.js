@@ -66,7 +66,7 @@ for (const [kind, makeStore] of Object.entries(stores)) {
       const html = await res.text();
       assert.match(html, /What we offer/);
       assert.doesNotMatch(html, /Chalo Baithak|plays/);
-      assert.match(html, /<option value="website">A café website<\/option>/);
+      assert.match(html, /<option value="website">A website<\/option>/);
       assert.match(html, /<symbol id="wm-content"/);
       assert.match(res.headers.get('content-security-policy'), /script-src 'self'/);
     });
@@ -81,7 +81,7 @@ for (const [kind, makeStore] of Object.entries(stores)) {
       assert.equal(res.status, 201);
       const body = await res.json();
       assert.equal(body.brand, 'Morning Rush');
-      assert.equal(body.service, 'a café website');
+      assert.equal(body.service, 'a website');
       assert.equal(sent.at(-1).email, 'hello@example.com');
     });
 
@@ -202,7 +202,7 @@ for (const [kind, makeStore] of Object.entries(stores)) {
       const saved = await (await fetch(`${base}/api/enquiries`, json('POST', { ...enquiry, brand: 'Toro Coffee' }))).json();
       assert.equal(pushed.length, 2);
       assert.equal(pushed[0].title, 'New enquiry: Toro Coffee');
-      assert.match(pushed[0].body, /Eilidh \(Glasgow\) wants a café website\. "Opening hours reel\?"/);
+      assert.match(pushed[0].body, /Eilidh \(Glasgow\) wants a website\. "Opening hours reel\?"/);
       assert.equal(pushed[0].url, `/admin#enquiry-${saved.id}`);
       assert.equal(pushed[0].publicKey, publicKey);
     });

@@ -2,12 +2,12 @@
 // Labels finish the sentence "Help with …" on the form, so they stay short.
 export const SERVICES = {
   events: 'event content',
-  bts: 'a BTS shoot',
   reels: 'reels',
   editing: 'video editing',
   social: 'social media',
   strategy: 'a strategy session',
-  website: 'a café website',
+  analysis: 'a brand analysis',
+  website: 'a website',
   other: 'something else',
 };
 
