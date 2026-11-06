@@ -17,6 +17,7 @@ export function fakeUpstash() {
         return n;
       }
       case 'DEL': return a.filter(k => strings.delete(k)).length;
+      case 'PEXPIRE': return strings.has(a[0]) ? 1 : 0;
       case 'ZADD': {
         const z = zsets.get(a[0]) ?? new Map();
         zsets.set(a[0], z.set(String(a[2]), Number(a[1])));

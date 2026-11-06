@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 
-const COOKIE = 'cbt_desk';
+// In production the __Host- prefix makes the browser refuse the cookie unless it is Secure,
+// set by this exact host and scoped to the whole site, so no subdomain can set or read it.
+const cookieName = config => (config.isProd ? '__Host-cbt_desk' : 'cbt_desk');
 
 const sha256 = s => crypto.createHash('sha256').update(String(s)).digest();
 const sign = (payload, secret) => crypto.createHmac('sha256', secret).update(payload).digest('base64url');
@@ -24,7 +26,7 @@ export function issueSession(res, config) {
   const exp = Date.now() + config.sessionDays * 864e5;
   const payload = Buffer.from(JSON.stringify({ exp })).toString('base64url');
   const token = `${payload}.${sign(payload, config.sessionSecret)}`;
-  res.cookie(COOKIE, token, {
+  res.cookie(cookieName(config), token, {
     httpOnly: true,
     sameSite: 'strict',
     secure: config.isProd,
@@ -34,11 +36,11 @@ export function issueSession(res, config) {
 }
 
 export function clearSession(res, config) {
-  res.clearCookie(COOKIE, { httpOnly: true, sameSite: 'strict', secure: config.isProd, path: '/' });
+  res.clearCookie(cookieName(config), { httpOnly: true, sameSite: 'strict', secure: config.isProd, path: '/' });
 }
 
 export function hasSession(req, config) {
-  const token = parseCookies(req.headers.cookie)[COOKIE];
+  const token = parseCookies(req.headers.cookie)[cookieName(config)];
   if (!token) return false;
   const [payload, mac] = token.split('.');
   if (!payload || !mac) return false;
@@ -62,22 +64,53 @@ export const requireDesk = config => (req, res, next) => {
   next();
 };
 
-// A small fixed-window limiter, per client address. Enough for one studio's site.
-export function rateLimit({ windowMs, max, message }) {
-  const hits = new Map();
-  return (req, res, next) => {
+// A fixed-window limiter. Counts live in the store, so every serverless instance shares them;
+// if the store cannot be reached, each instance falls back to its own memory rather than failing open.
+export function rateLimit({ store, name, windowMs, max, message, key = req => req.ip }) {
+  const local = new Map();
+  const localHit = id => {
     const now = Date.now();
-    const key = req.ip;
-    const entry = hits.get(key);
+    const entry = local.get(id);
     if (!entry || entry.reset < now) {
-      hits.set(key, { count: 1, reset: now + windowMs });
-      if (hits.size > 5000) for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
-      return next();
+      local.set(id, { count: 1, reset: now + windowMs });
+      if (local.size > 5000) for (const [k, v] of local) if (v.reset < now) local.delete(k);
+      return 1;
     }
-    if (++entry.count > max) {
-      res.set('Retry-After', String(Math.ceil((entry.reset - now) / 1000)));
+    return ++entry.count;
+  };
+  return async (req, res, next) => {
+    const id = `${name}:${key(req)}`;
+    let count;
+    try {
+      count = store?.limits ? await store.limits.hit(id, windowMs) : localHit(id);
+    } catch {
+      count = localHit(id);
+    }
+    if (count > max) {
+      res.set('Retry-After', String(Math.ceil(windowMs / 1000)));
       return res.status(429).json({ error: message });
     }
     next();
   };
+}
+
+// Bot check for the public form: the page carries a signed timestamp. A post without a valid one
+// was not made from our page; one made within a few seconds of loading was not typed by a person.
+const formMac = (ts, secret) => crypto.createHmac('sha256', secret).update(`cbt-form:${ts}`).digest('base64url').slice(0, 22);
+
+export function formToken(config, now = Date.now()) {
+  return `${now}.${formMac(String(now), config.sessionSecret)}`;
+}
+
+// 'ok', 'bot' (forged, missing or too fast) or 'stale' (the page was left open for over a week).
+export function checkFormToken(token, config, now = Date.now()) {
+  const [ts, mac] = String(token ?? '').split('.');
+  if (!/^\d{13}$/.test(ts ?? '') || !mac) return 'bot';
+  const expected = Buffer.from(formMac(ts, config.sessionSecret));
+  const given = Buffer.from(mac);
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return 'bot';
+  const age = now - Number(ts);
+  if (age < (config.formMinMs ?? 3000)) return 'bot';
+  if (age > 7 * 864e5) return 'stale';
+  return 'ok';
 }

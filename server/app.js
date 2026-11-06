@@ -4,20 +4,28 @@ import crypto from 'node:crypto';
 import express from 'express';
 import { SERVICES, STATUSES } from './content.js';
 import { createRenderer } from './render.js';
-import { passwordMatches, issueSession, clearSession, hasSession, requireDesk, rateLimit } from './auth.js';
+import { passwordMatches, issueSession, clearSession, hasSession, requireDesk, rateLimit, checkFormToken } from './auth.js';
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+// One address only: no spaces, commas, angle brackets or quotes that could add a second recipient.
+const EMAIL = /^[^\s@<>(),;:\"'\[\]\\]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
 const URLISH = /^(\/(?!\/)|https:\/\/)\S*$/;
 
 const text = (body, key) => String(body?.[key] ?? '').trim();
+// Single-line fields: control characters (newlines included) become spaces, so nothing can break into an email header.
+const line = (body, key) => text(body, key).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/ {2,}/g, ' ');
+// Record ids are positive whole numbers; anything else simply matches nothing.
+const recordId = raw => (/^[1-9]\d{0,9}$/.test(String(raw)) ? Number(raw) : 0);
+
+// Push alerts may only go to the browsers' own push services, never to an address of the sender's choosing.
+export const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^([a-z0-9-]+\.)*push\.apple\.com$/, /^([a-z0-9-]+\.)*push\.services\.mozilla\.com$/, /^([a-z0-9-]+\.)*notify\.windows\.com$/];
 
 function readEnquiry(body) {
   const e = {
-    name: text(body, 'name'),
-    brand: text(body, 'brand'),
-    city: text(body, 'city'),
-    service: text(body, 'service'),
-    email: text(body, 'email'),
+    name: line(body, 'name'),
+    brand: line(body, 'brand'),
+    city: line(body, 'city'),
+    service: line(body, 'service'),
+    email: line(body, 'email'),
     message: text(body, 'message'),
   };
   const errors = {};
@@ -93,8 +101,12 @@ export function createApp({ store, config, notifier, push = NO_PUSH }) {
         "form-action 'self'",
       ].join('; '),
       'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
-      'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Resource-Policy': 'same-origin',
+      ...(config.isProd ? { 'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload' } : {}),
     });
     next();
   });
@@ -122,13 +134,23 @@ export function createApp({ store, config, notifier, push = NO_PUSH }) {
     '/api/enquiries',
     express.json({ limit: '20kb' }),
     express.urlencoded({ extended: false, limit: '20kb' }),
-    rateLimit({ windowMs: 10 * 60e3, max: 5, message: 'Too many messages from here. Try again in a few minutes, or email contentbook7@gmail.com.' }),
+    rateLimit({ store, name: 'enquiry', windowMs: 10 * 60e3, max: 5, message: 'Too many messages from here. Try again in a few minutes, or email contentbook7@gmail.com.' }),
+    rateLimit({ store, name: 'enquiry-all', key: () => 'all', windowMs: 60 * 60e3, max: 60, message: 'We are getting a lot of messages right now. Please email contentbook7@gmail.com instead.' }),
     async (req, res) => {
       const wantsJson = req.is('application/json');
       const body = req.body ?? {};
+      const thanks = () => (wantsJson ? res.status(201).json({ ok: true }) : res.redirect(303, '/?sent=1#contact'));
 
-      // The hidden "website" field is only ever filled in by bots.
-      if (text(body, 'website')) return wantsJson ? res.status(201).json({ ok: true }) : res.redirect(303, '/?sent=1#contact');
+      // Bots: the hidden "website" field is only ever filled in by them, and a post without our page's
+      // signed timestamp, or sent seconds after the page loaded, was not typed by a person. They get a
+      // thank-you, so they learn nothing, and nothing is stored or sent.
+      if (text(body, 'website')) return thanks();
+      const token = checkFormToken(body.ts, config);
+      if (token === 'bot') return thanks();
+      if (token === 'stale') {
+        const again = 'This page was open for a long time. Refresh it and send your message again.';
+        return wantsJson ? res.status(400).json({ error: again, fields: {} }) : res.redirect(303, `/?error=${encodeURIComponent(again)}#contact`);
+      }
 
       const { e, errors } = readEnquiry(body);
       if (Object.keys(errors).length) {
@@ -143,30 +165,42 @@ export function createApp({ store, config, notifier, push = NO_PUSH }) {
         push.enquiry(saved).catch(err => console.error(`Enquiry #${saved.id} saved, but the phone alert failed:`, err.message)),
       ]);
 
-      if (!wantsJson) return res.redirect(303, '/?sent=1#contact');
-      res.status(201).json({ ok: true, id: saved.id, name: e.name, brand: e.brand, city: e.city, email: e.email, service: SERVICES[e.service] });
+      // The reply carries nothing back: the page already has what the visitor typed.
+      thanks();
     },
   );
 
   // ---------- studio desk (admin) ----------
 
   const desk = express.Router();
-  desk.use(express.json({ limit: '8mb' }));
+  // Small bodies everywhere, except image uploads.
+  const smallJson = express.json({ limit: '100kb' });
+  const bigJson = express.json({ limit: '8mb' });
+  desk.use((req, res, next) => (req.path === '/uploads' ? bigJson : smallJson)(req, res, next));
 
   desk.post(
     '/login',
-    rateLimit({ windowMs: 15 * 60e3, max: 8, message: 'Too many tries. Wait 15 minutes.' }),
-    (req, res) => {
+    rateLimit({ store, name: 'login', windowMs: 15 * 60e3, max: 8, message: 'Too many tries. Wait 15 minutes.' }),
+    async (req, res) => {
       if (!config.adminPassword) return res.status(503).json({ error: 'The desk is locked: set ADMIN_PASSWORD on the server first.' });
-      if (!passwordMatches(text(req.body, 'password'), config.adminPassword)) return res.status(401).json({ error: 'That password is not right.' });
+      const password = text(req.body, 'password');
+      if (password.length > 200 || !passwordMatches(password, config.adminPassword)) {
+        // Wrong guesses from every address together are capped too, so a botnet cannot share out the guessing.
+        const failures = await store.limits?.hit('login-fail:all', 60 * 60e3).catch(() => 0);
+        if (failures > 100) return res.status(429).set('Retry-After', '3600').json({ error: 'Too many wrong passwords. The desk is paused for an hour.' });
+        return res.status(401).json({ error: 'That password is not right.' });
+      }
       issueSession(res, config);
       res.json({ ok: true });
     },
   );
 
-  desk.get('/me', (req, res) =>
-    res.json({ signedIn: hasSession(req, config), configured: Boolean(config.adminPassword), mail: notifier.enabled, uploads: store.canUpload }),
-  );
+  desk.get('/me', (req, res) => {
+    const signedIn = hasSession(req, config);
+    // Strangers learn only whether to show the sign-in box.
+    if (!signedIn) return res.json({ signedIn, configured: Boolean(config.adminPassword) });
+    res.json({ signedIn, configured: true, mail: notifier.enabled, uploads: store.canUpload });
+  });
 
   desk.post('/logout', (req, res) => {
     clearSession(res, config);
@@ -180,7 +214,9 @@ export function createApp({ store, config, notifier, push = NO_PUSH }) {
 
   desk.post('/push/subscribe', async (req, res) => {
     const sub = req.body?.subscription;
-    const ok = sub && typeof sub.endpoint === 'string' && /^https:\/\/\S{8,1000}$/.test(sub.endpoint)
+    let host = '';
+    try { host = new URL(sub?.endpoint).hostname; } catch {}
+    const ok = sub && typeof sub.endpoint === 'string' && /^https:\/\/\S{8,1000}$/.test(sub.endpoint) && PUSH_HOSTS.some(h => h.test(host))
       && typeof sub.keys?.p256dh === 'string' && sub.keys.p256dh.length < 200
       && typeof sub.keys?.auth === 'string' && sub.keys.auth.length < 100;
     if (!ok) return res.status(400).json({ error: 'That is not a push subscription.' });
@@ -220,13 +256,13 @@ export function createApp({ store, config, notifier, push = NO_PUSH }) {
       changes.notes = notes;
     }
     if (!Object.keys(changes).length) return res.status(400).json({ error: 'Nothing to change.' });
-    const updated = await store.enquiries.update(Number(req.params.id), changes);
+    const updated = await store.enquiries.update(recordId(req.params.id), changes);
     if (!updated) return res.status(404).json({ error: 'No such enquiry.' });
     res.json(updated);
   });
 
   desk.delete('/enquiries/:id', async (req, res) => {
-    if (!(await store.enquiries.remove(Number(req.params.id)))) return res.status(404).json({ error: 'No such enquiry.' });
+    if (!(await store.enquiries.remove(recordId(req.params.id)))) return res.status(404).json({ error: 'No such enquiry.' });
     res.json({ ok: true });
   });
 
@@ -242,13 +278,13 @@ export function createApp({ store, config, notifier, push = NO_PUSH }) {
     const { w, errors } = readWork(req.body, true);
     if (Object.keys(errors).length) return res.status(400).json({ error: 'Some fields need another look.', fields: errors });
     if (!Object.keys(w).length) return res.status(400).json({ error: 'Nothing to change.' });
-    const updated = await store.work.update(Number(req.params.id), w);
+    const updated = await store.work.update(recordId(req.params.id), w);
     if (!updated) return res.status(404).json({ error: 'No such piece of work.' });
     res.json(updated);
   });
 
   desk.delete('/work/:id', async (req, res) => {
-    if (!(await store.work.remove(Number(req.params.id)))) return res.status(404).json({ error: 'No such piece of work.' });
+    if (!(await store.work.remove(recordId(req.params.id)))) return res.status(404).json({ error: 'No such piece of work.' });
     res.json({ ok: true });
   });
 

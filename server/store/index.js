@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { createRedisStore } from './redis.js';
+import { parseKey, encryptStore } from './encrypt.js';
 
 // Upstash Redis when its credentials are set; otherwise SQLite on the local disk.
 // Vercel's Storage tab names them <PREFIX>_REST_API_URL / _TOKEN with a prefix the user picks
@@ -12,10 +13,12 @@ function redisCredentials(env) {
 }
 
 export async function openStore(config) {
+  // Read the key first, so a malformed one stops the server before anything is written.
+  const key = parseKey(process.env.DATA_ENCRYPTION_KEY);
   const [url, token] = redisCredentials(process.env);
-  if (url && token) return createRedisStore({ url, token });
+  if (url && token) return encryptStore(createRedisStore({ url, token }), key);
 
   const { createSqliteStore } = await import('./sqlite.js');
   fs.mkdirSync(config.dataDir, { recursive: true });
-  return createSqliteStore(config.dbFile);
+  return encryptStore(createSqliteStore(config.dbFile), key);
 }

@@ -93,13 +93,15 @@ form.addEventListener('submit', async event => {
     if (res.status === 400) return showErrors(body.fields);
     if (!res.ok) return statusLine(body.error || 'That did not send. Email contentbook7@gmail.com instead.');
 
+    // The server sends nothing back, so the thank-you is made from what was typed.
+    const service = form.elements.service.selectedOptions[0]?.textContent.toLowerCase() || 'your project';
     const done = document.createElement('div');
     done.className = 'enquiry--done';
     done.setAttribute('role', 'status');
     done.append(
-      Object.assign(document.createElement('h3'), { textContent: `Thank you, ${body.name}.` }),
+      Object.assign(document.createElement('h3'), { textContent: `Thank you, ${data.name.trim()}.` }),
       Object.assign(document.createElement('p'), {
-        textContent: `We have your enquiry about ${body.service} for ${body.brand}. We will reply to ${body.email} to set up a call.`,
+        textContent: `We have your enquiry about ${service} for ${data.brand.trim()}. We will reply to ${data.email.trim()} to set up a call.`,
       }),
     );
     form.replaceWith(done);

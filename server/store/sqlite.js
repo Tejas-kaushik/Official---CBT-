@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS rate_limits (
+  name  TEXT PRIMARY KEY,
+  count INTEGER NOT NULL,
+  reset INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   endpoint     TEXT PRIMARY KEY,
   subscription TEXT NOT NULL,
@@ -76,6 +82,11 @@ export function createSqliteStore(file) {
     allSubs: db.prepare('SELECT subscription, created_at FROM push_subscriptions ORDER BY created_at'),
     putSub: db.prepare('INSERT OR REPLACE INTO push_subscriptions (endpoint, subscription) VALUES (?, ?)'),
     deleteSub: db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?'),
+    hitLimit: db.prepare(`INSERT INTO rate_limits (name, count, reset) VALUES (?1, 1, ?2 + ?3)
+      ON CONFLICT (name) DO UPDATE SET count = CASE WHEN reset <= ?2 THEN 1 ELSE count + 1 END,
+                                       reset = CASE WHEN reset <= ?2 THEN ?2 + ?3 ELSE reset END
+      RETURNING count`),
+    pruneLimits: db.prepare('DELETE FROM rate_limits WHERE reset <= ?'),
   };
 
   return {
@@ -132,6 +143,13 @@ export function createSqliteStore(file) {
       async init(name, value) {
         q.initSetting.run(name, JSON.stringify(value));
         return JSON.parse(q.getSetting.get(name).value);
+      },
+    },
+    limits: {
+      async hit(name, windowMs) {
+        const now = Date.now();
+        if (Math.random() < 0.01) q.pruneLimits.run(now);
+        return q.hitLimit.get(name, now, windowMs).count;
       },
     },
     push: {

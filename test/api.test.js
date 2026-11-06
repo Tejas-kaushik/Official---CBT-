@@ -8,6 +8,7 @@ import { createSqliteStore } from '../server/store/sqlite.js';
 import { createRedisStore } from '../server/store/redis.js';
 import { createApp } from '../server/app.js';
 import { createPush } from '../server/push.js';
+import { formToken } from '../server/auth.js';
 import { fakeUpstash } from './fake-upstash.js';
 
 // The same checks run against both stores: SQLite (local, Render) and Upstash Redis (Vercel).
@@ -52,7 +53,8 @@ for (const [kind, makeStore] of Object.entries(stores)) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
 
-    const enquiry = { name: 'Eilidh', brand: 'Morning Rush', city: 'Glasgow', service: 'website', email: 'hello@example.com', message: 'Opening hours reel?' };
+    // ts: the signed timestamp the page puts in the form, as if it loaded ten seconds ago.
+    const enquiry = { name: 'Eilidh', brand: 'Morning Rush', city: 'Glasgow', service: 'website', email: 'hello@example.com', message: 'Opening hours reel?', ts: formToken(config, Date.now() - 10_000) };
 
     async function signIn() {
       const res = await fetch(`${base}/api/desk/login`, json('POST', { password: 'test-password' }));
@@ -79,14 +81,14 @@ for (const [kind, makeStore] of Object.entries(stores)) {
     test('a valid enquiry is saved and the studio is notified', async () => {
       const res = await fetch(`${base}/api/enquiries`, json('POST', enquiry));
       assert.equal(res.status, 201);
-      const body = await res.json();
-      assert.equal(body.brand, 'Morning Rush');
-      assert.equal(body.service, 'a website');
+      // The reply carries nothing back about the enquiry.
+      assert.deepEqual(await res.json(), { ok: true });
       assert.equal(sent.at(-1).email, 'hello@example.com');
+      assert.equal(sent.at(-1).brand, 'Morning Rush');
     });
 
     test('a bad enquiry comes back with a reason for each field', async () => {
-      const res = await fetch(`${base}/api/enquiries`, json('POST', { name: '', brand: 'x', service: 'nope', email: 'not-an-email' }));
+      const res = await fetch(`${base}/api/enquiries`, json('POST', { name: '', brand: 'x', service: 'nope', email: 'not-an-email', ts: enquiry.ts }));
       assert.equal(res.status, 400);
       const { fields } = await res.json();
       assert.deepEqual(Object.keys(fields).sort(), ['email', 'name', 'service']);
@@ -178,7 +180,7 @@ for (const [kind, makeStore] of Object.entries(stores)) {
       assert.equal(fake.status, 400);
     });
 
-    const phone = n => ({ endpoint: `https://push.example.com/phone-${n}`, keys: { p256dh: 'BKey'.padEnd(87, 'x'), auth: 'auth-secret-16' } });
+    const phone = n => ({ endpoint: `https://fcm.googleapis.com/fcm/send/phone-${n}`, keys: { p256dh: 'BKey'.padEnd(87, 'x'), auth: 'auth-secret-16' } });
 
     test('phone alerts need the desk password', async () => {
       assert.equal((await fetch(`${base}/api/desk/push`)).status, 401);
@@ -199,7 +201,8 @@ for (const [kind, makeStore] of Object.entries(stores)) {
       assert.equal((await res.json()).phones, 2);
 
       pushed.length = 0;
-      const saved = await (await fetch(`${base}/api/enquiries`, json('POST', { ...enquiry, brand: 'Toro Coffee' }))).json();
+      await fetch(`${base}/api/enquiries`, json('POST', { ...enquiry, brand: 'Toro Coffee' }));
+      const saved = sent.at(-1);
       assert.equal(pushed.length, 2);
       assert.equal(pushed[0].title, 'New enquiry: Toro Coffee');
       assert.match(pushed[0].body, /Eilidh \(Glasgow\) wants a website\. "Opening hours reel\?"/);

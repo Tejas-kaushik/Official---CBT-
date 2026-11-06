@@ -118,6 +118,14 @@ export function createRedisStore({ url, token, fetch: send = fetch, prefix = 'cb
         return JSON.parse(await call('GET', key(`setting:${name}`)));
       },
     },
+    // Rate-limit counters, shared by every serverless instance.
+    limits: {
+      async hit(name, windowMs) {
+        const count = Number(await call('INCR', key(`limit:${name}`)));
+        if (count === 1) await call('PEXPIRE', key(`limit:${name}`), windowMs);
+        return count;
+      },
+    },
     push: {
       list: readSubs,
       async add(sub) {

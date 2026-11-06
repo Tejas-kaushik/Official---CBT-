@@ -200,6 +200,7 @@
       <div class="field"><label for="f-service">What do you need?</label><select id="f-service" name="service" required aria-describedby="e-service"><!--service-options--></select><p class="field__error" id="e-service"></p></div>
       <div class="field field--wide"><label for="f-email">Email</label><input id="f-email" name="email" type="email" autocomplete="email" required maxlength="160" aria-describedby="e-email"><p class="field__error" id="e-email"></p></div>
       <div class="field field--wide"><label for="f-message">Tell us more <span>(optional)</span></label><textarea id="f-message" name="message" rows="4" maxlength="2000" aria-describedby="e-message" placeholder="Dates, the kind of content, the moment you want captured"></textarea><p class="field__error" id="e-message"></p></div>
+      <input type="hidden" name="ts" value="{{form_ts}}">
       <div class="trap" aria-hidden="true"><label for="f-website">Leave this empty</label><input id="f-website" name="website" tabindex="-1" autocomplete="off"></div>
       <div class="enquiry__send"><button class="button button--light" type="submit">Send enquiry</button><p>Pricing is agreed on a call, around your budget.</p></div>
       <!--form-status-->

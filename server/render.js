@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { SERVICES } from './content.js';
+import { formToken } from './auth.js';
 
 export const escapeHtml = s =>
   String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -18,7 +19,8 @@ function sprite(brandDir) {
   return `<svg class="sprite" aria-hidden="true" focusable="false">${symbol('wm-content', 'word-content.svg')}${symbol('wm-book', 'word-book.svg')}${symbol('wm-bytee', 'bytee.svg')}</svg>`;
 }
 
-export function createRenderer({ root, publicDir, isProd }) {
+export function createRenderer(config) {
+  const { root, publicDir, isProd } = config;
   const file = path.join(root, 'server', 'views', 'home.html');
   let cached;
   const template = () => {
@@ -39,6 +41,7 @@ export function createRenderer({ root, publicDir, isProd }) {
     return template()
       .replace('<!--service-options-->', options)
       .replace('<!--form-status-->', status)
-      .replaceAll('{{year}}', String(new Date().getFullYear()));
+      .replaceAll('{{year}}', String(new Date().getFullYear()))
+      .replace('{{form_ts}}', formToken(config));
   };
 }
